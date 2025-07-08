@@ -1,0 +1,1 @@
+python -m PyInstaller suzerain-save-editor.py --onefile --windowed --noconsole
