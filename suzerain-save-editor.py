@@ -17,6 +17,11 @@ class SaveGameEditor:
         # Setup default save directory
         self.default_dir = self.get_default_save_dir()
         
+        # Initialize favorites
+        self.favorites = set()
+        self.favorites_file = "favorites.json"
+        self.load_favorites()
+        
         # Create UI elements
         self.create_widgets()
         self.file_path = None
@@ -29,6 +34,20 @@ class SaveGameEditor:
         if not user_profile:
             user_profile = os.path.expanduser('~')
         return os.path.join(user_profile, 'AppData', 'LocalLow', 'Torpor Games', 'Suzerain')
+    
+    def load_favorites(self):
+        """Load favorite keys from file"""
+        if os.path.exists(self.favorites_file):
+            try:
+                with open(self.favorites_file, 'r') as f:
+                    self.favorites = set(json.load(f))
+            except:
+                self.favorites = set()
+    
+    def save_favorites(self):
+        """Save favorite keys to file"""
+        with open(self.favorites_file, 'w') as f:
+            json.dump(list(self.favorites), f)
     
     def create_widgets(self):
         """Create all UI widgets with maroon theme"""
@@ -51,6 +70,10 @@ class SaveGameEditor:
         
         self.save_btn = ttk.Button(button_frame, text="Save Savegame", command=self.save_savegame, state=tk.DISABLED)
         self.save_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Favorites button
+        self.fav_btn = ttk.Button(button_frame, text="Toggle Favorite", command=self.toggle_favorite, state=tk.DISABLED)
+        self.fav_btn.pack(side=tk.LEFT, padx=5)
         
         # Search frame
         search_frame = ttk.Frame(self.root)
@@ -83,8 +106,9 @@ class SaveGameEditor:
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
         
-        # Bind double-click event for editing
+        # Bind events
         self.tree.bind("<Double-1>", self.on_double_click)
+        self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
         
         # Status bar with maroon theme
         self.status = tk.Label(
@@ -118,6 +142,7 @@ class SaveGameEditor:
             # Populate treeview
             self.populate_tree(self.original_vars)
             self.save_btn.config(state=tk.NORMAL)
+            self.fav_btn.config(state=tk.NORMAL)
             self.search_var.set("")  # Clear search filter
             
         except Exception as e:
@@ -187,20 +212,34 @@ class SaveGameEditor:
         return parsed
     
     def populate_tree(self, data):
-        """Populate treeview with data"""
+        """Populate treeview with data, showing favorites first"""
         self.tree.delete(*self.tree.get_children())
         self.tree_items = {}
         
+        # Separate favorites and non-favorites
+        favorites = []
+        non_favorites = []
+        
         for key, value in data:
-            if isinstance(value, bool):
-                display_value = "true" if value else "false"
-            elif isinstance(value, int):
-                display_value = str(value)
+            if key in self.favorites:
+                favorites.append((key, value))
             else:
-                display_value = value
-                
+                non_favorites.append((key, value))
+        
+        # Add favorites first with star indicator
+        for key, value in favorites:
+            display_value = "true" if value is True else "false" if value is False else str(value)
+            item_id = self.tree.insert("", "end", values=(f"★ {key}", display_value), tags=("favorite",))
+            self.tree_items[item_id] = (key, value)
+        
+        # Add non-favorites
+        for key, value in non_favorites:
+            display_value = "true" if value is True else "false" if value is False else str(value)
             item_id = self.tree.insert("", "end", values=(key, display_value))
             self.tree_items[item_id] = (key, value)
+        
+        # Configure tag for favorites
+        self.tree.tag_configure("favorite", foreground="blue")
     
     def filter_tree(self, event=None):
         """Filter treeview based on search text - completely hide non-matching items"""
@@ -218,6 +257,39 @@ class SaveGameEditor:
                 filtered_data.append((key, value))
         
         self.populate_tree(filtered_data)
+    
+    def on_tree_select(self, event):
+        """Update favorite button state based on selection"""
+        selected = self.tree.selection()
+        if selected:
+            key = self.tree_items[selected[0]][0]
+            if key in self.favorites:
+                self.fav_btn.config(text="Remove Favorite")
+            else:
+                self.fav_btn.config(text="Add Favorite")
+    
+    def toggle_favorite(self):
+        """Toggle favorite status for the selected key"""
+        selected = self.tree.selection()
+        if not selected:
+            return
+            
+        key = self.tree_items[selected[0]][0]
+        
+        if key in self.favorites:
+            self.favorites.remove(key)
+        else:
+            self.favorites.add(key)
+        
+        # Save favorites and refresh tree
+        self.save_favorites()
+        self.populate_tree(self.original_vars)
+        
+        # Update button text
+        if key in self.favorites:
+            self.fav_btn.config(text="Remove Favorite")
+        else:
+            self.fav_btn.config(text="Add Favorite")
     
     def on_double_click(self, event):
         """Handle double-click event for editing values"""
